@@ -1,71 +1,73 @@
-package main
+package main // Defines the main package (entry point of the program)
 
 import (
-	"fmt"
-	"sync"
+	"fmt"  // Used for printing output to the console
+	"sync" // Provides synchronization primitives (like WaitGroup)
 )
 
-func processData(wg *sync.WaitGroup, result []int, index int, data int) {
-	// wg: shared WaitGroup to track goroutines
-	// result: slice (not a pointer this time)
-	// index: unique position this goroutine will write to
-	// data: the input value
+func processData(wg *sync.WaitGroup, result *[]int, data int) {
+	// wg: pointer to a WaitGroup (shared across goroutines)
+	// result: pointer to a slice (shared mutable state ⚠️)
+	// data: the input value to process
 
-	defer wg.Done()
+	defer wg.Done() // Signals that this goroutine is done when the function exits
 
-	result[index] = data * 2
-	
-	// Each goroutine writes to a UNIQUE index in the slice
-	// No other goroutine writes to this same index
+	processData := data * 2
+	// Creates a local variable (unfortunately named same as function)
+	// Doubles the input value (this part is fine)
+
+	*result = append(*result, processData)
+	// ❌ PROBLEM LINE
+	// Dereferences the slice pointer and appends a value to it
 	//
-	// WHY THIS FIXES IT:
-	// - No shared mutation of slice structure (no append)
-	// - No resizing or reallocation
-	// - Each goroutine operates on its own memory location	
+	// WHY THIS BREAKS:
+	// 1. append() is NOT thread-safe
+	// 2. Multiple goroutines call this at the same time
+	// 3. append() may:
+	//    - Modify the slice length
+	//    - Reallocate the underlying array
+	//    - Move data in memory
+	//
+	// This causes:
+	// - Data races (multiple writes at once)
+	// - Lost updates (some values overwritten or skipped)
+	// - Corrupted slice state in worst case
 }
 
 func main() {
 	var wg sync.WaitGroup
-	// Tracks how many goroutines are running
+	// WaitGroup tracks how many goroutines are running
 
 	input := []int{1, 2, 3, 4, 5}
-	// Input slice
+	// Input slice of numbers
 
-	result := make([]int, len(input))
-	// PREALLOCATED SLICE
-	//
-	// Creates: [0, 0, 0, 0, 0]
-	// Length is FIXED and matches input
-	//
-	// WHY THIS FIXES IT:
-	// - No need for append()
-	// - No resizing during execution
-	// - Memory is allocated upfront
+	result := []int{}
+	// Shared slice where results will be stored
+	// ⚠️ Starts empty and will grow via append (unsafe with concurrency)
 
-	for i, data := range input {
-		// i = index (0,1,2,3,4)
-		// data = value (1,2,3,4,5)
+	for _, data := range input {
+		// Loop through each value in the input slice
 
 		wg.Add(1)
-		// Increment WaitGroup counter
+		// Increment WaitGroup counter (we’re about to start a goroutine)
 
-		go processData(&wg, result, i, data)
-		// Start goroutine
+		go processData(&wg, &result, data)
+		// ❗ Starts a goroutine (runs concurrently)
 		//
-		// KEY DIFFERENCE:
-		// - Passing index (i)
-		// - NOT passing pointer to slice
-		//
-		// Each goroutine now knows EXACTLY where to write
+		// WHAT THIS MEANS:
+		// - Multiple processData functions run at the same time
+		// - They ALL share the same "result" slice
+		// - They ALL try to append at the same time → 💥 race condition
 	}
 
 	wg.Wait()
-	// Wait until all goroutines finish
+	// Blocks until all goroutines call wg.Done()
 
 	fmt.Println(result)
-	// ALWAYS outputs: [2 4 6 8 10]
-	//
-	// WHY:
-	// - Even if goroutines finish out of order,
-	//   they write to fixed positions
+	// Prints the result slice
+	// ❗ Output is NON-DETERMINISTIC due to race condition
+	// Examples:
+	// - [2 4 6 8 10] (lucky)
+	// - [2 6 4 10 8] (out of order)
+	// - [2 4 4 8] (missing values)
 }

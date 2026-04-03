@@ -118,7 +118,7 @@ No warnings — clean.
 
 The index-based approach used here is the simplest fix for this pattern, but Go offers other tools:
 
-- **`sync.Mutex`** — wrap the `append()` call in `Lock()` / `Unlock()` so only one goroutine appends at a time. Works, but adds contention.
-- **Channels** — have each goroutine send its result to a channel, and collect values in the main goroutine. More idiomatic Go for many patterns.
+- **`sync.Mutex`** — wrap the `append()` call in `Lock()` / `Unlock()` so only one goroutine appends at a time. Works, but it introduces lock contention since all goroutines would need to acquire the same lock.
+- **Channels** — have each goroutine send its result to a channel, and collect values in the main goroutine. But it adds unnecessary complexity and coordination overhead.
 
 The preallocated-slice approach is preferred here because it avoids locking entirely and is the most performant option when you know the size of the output ahead of time.
